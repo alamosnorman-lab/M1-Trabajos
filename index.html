@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Live — Streaming</title>
+  <link href="../assets/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="icon" href="Twitch.png" type="image/png">
+    <style>
+      :root{
+        --bg:#0e0b14;
+        --panel:#121018;
+        --muted:#9a90a8;
+        --accent:#7c3aed; /* purple */
+        --accent-2:#9146ff;
+        --chat-bg:rgba(255,255,255,0.03);
+      }
+      html,body{height:100%;background:linear-gradient(180deg,var(--bg),#07060a);color:#e9e6f3;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial}
+      .site-header{background:transparent;padding:0.75rem 1rem;border-bottom:1px solid rgba(255,255,255,0.03);}
+  .brand{display:flex;align-items:center;gap:.75rem;color:var(--accent-2);font-weight:700}
+  .brand .logo{width:36px;height:36px;background:linear-gradient(135deg,var(--accent),var(--accent-2));border-radius:8px;display:inline-block}
+  .brand-logo-img{width:36px;height:36px;border-radius:8px;object-fit:cover;display:inline-block}
+  .stream-area{background:var(--panel);border-radius:12px;overflow:hidden;box-shadow:0 6px 30px rgba(0,0,0,0.6);display:flex;flex-direction:column;min-height:60vh}
+    /* video area: make iframe fill the container and keep overlay visible */
+    .video-placeholder{background:linear-gradient(90deg,#0b0710 0%, #1a0f2b 100%);height:60vh;position:relative;display:block;color:var(--muted);font-size:1.25rem}
+  /* embed wrapper positioned to occupy the full video-placeholder */
+  .embed-wrapper{position:absolute;inset:0;width:100%;height:100%}
+  .embed-wrapper iframe{width:100%;height:100%;border:0;display:block}
+  /* ensure overlay is above the iframe */
+  .overlay-highlight{z-index:5}
+  .overlay-highlight{position:absolute;right:1rem;top:1rem;background:linear-gradient(90deg,rgba(124,58,237,0.12),rgba(145,70,255,0.08));padding:.6rem .8rem;border-radius:10px;display:flex;gap:.6rem;align-items:center;backdrop-filter:blur(4px);border:1px solid rgba(145,70,255,0.12)}
+  .overlay-avatar{width:48px;height:48px;border-radius:8px;object-fit:cover;border:2px solid rgba(0,0,0,0.25)}
+  .overlay-badge{background:var(--accent-2);color:white;padding:.15rem .45rem;border-radius:999px;font-weight:700;font-size:.8rem}
+  .video-wrap{position:relative;flex:1;display:flex;flex-direction:column}
+      .controls{padding:.6rem .8rem;background:linear-gradient(180deg,rgba(124,58,237,0.06),transparent);border-top:1px solid rgba(255,255,255,0.03);}
+  .chat{background:var(--chat-bg);border-left:1px solid rgba(255,255,255,0.03);height:60vh;display:flex;flex-direction:column;min-height:320px}
+
+  /* ensure row columns align to the top so chat and stream line up */
+  .row.g-4{align-items:flex-start}
+      .chat-messages{padding:1rem;overflow:auto;flex:1}
+      .chat-input{padding:.6rem;background:linear-gradient(180deg,transparent,rgba(255,255,255,0.02));border-top:1px solid rgba(255,255,255,0.02)}
+      .msg{margin-bottom:.6rem}
+      .msg .user{color:var(--accent-2);font-weight:700;margin-right:.5rem}
+      .sidebar-card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:8px;padding:.6rem;margin-bottom:.8rem}
+      .viewer-chip{background:rgba(255,255,255,0.04);padding:.2rem .5rem;border-radius:999px;font-weight:600;color:var(--muted)}
+      .follow-btn{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:white}
+      @media (max-width:991px){.video-placeholder{height:40vh}.chat{height:40vh}}
+      /* small touches */
+      a.unstyled{color:inherit;text-decoration:none}
+      /* emotes */
+      .emotes{display:flex;gap:.4rem;align-items:center}
+      .emote-btn{background:transparent;border:1px solid rgba(255,255,255,0.03);padding:.2rem .4rem;border-radius:6px;cursor:pointer;color:var(--muted)}
+      .emote-btn:hover{transform:translateY(-2px);border-color:rgba(145,70,255,0.6)}
+      /* message animation */
+      .msg{margin-bottom:.6rem;opacity:0;transform:translateY(6px);animation:pop .28s forwards}
+      @keyframes pop{to{opacity:1;transform:none}}
+      /* focus styles for accessibility */
+      :focus{outline:3px solid rgba(145,70,255,0.18);outline-offset:2px}
+      .btn:focus{box-shadow:0 0 0 3px rgba(124,58,237,0.12)}
+      /* improve contrast for small text */
+      .text-muted{color:var(--muted) !important}
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container d-flex justify-content-between align-items-center">
+        <div class="brand">
+          <img src="Twitch.png" alt="LiveHub icon" class="brand-logo-img" />
+          <span>LiveHub</span>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <nav class="d-none d-md-flex align-items-center gap-3">
+            <a class="text-muted unstyled" href="#">Explorar</a>
+            <a class="text-muted unstyled" href="#">Favoritos</a>
+            <a class="text-muted unstyled" href="#">Contacto</a>
+          </nav>
+          <button class="btn btn-sm btn-outline-light">Iniciar sesión</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="container py-4">
+      <div class="row g-4">
+        <div class="col-lg-8">
+          <div class="stream-area">
+            <div class="video-wrap">
+              <div class="video-placeholder" id="video" role="region" aria-label="Reproductor de Twitch">
+                <div class="embed-wrapper" aria-hidden="false" id="embedWrapper">
+                  <!-- Twitch embed: created dynamically to set parent based on current hostname -->
+                </div>
+                <noscript class="text-muted small">El reproductor requiere JavaScript habilitado.</noscript>
+              </div>
+              <!-- Overlay para destacar streamer especial -->
+              <div class="overlay-highlight d-none" id="highlight">
+                <img src="ainz.jpeg" alt="avatar" class="overlay-avatar" id="highlightAvatar">
+                <div>
+                  <div style="font-weight:800" id="highlightName">Norman Nayart</div>
+                  <div class="text-muted small">Streamer destacado</div>
+                </div>
+                <div class="ms-2 overlay-badge">LIVE</div>
+              </div>
+            </div>
+            <div class="p-3 d-flex justify-content-between align-items-center controls">
+              <div class="d-flex align-items-center gap-3">
+                <span class="viewer-chip">10.4K espectadores</span>
+                <small class="text-muted">· JuanGamer</small>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm follow-btn">Seguir</button>
+                <button class="btn btn-sm btn-outline-light">Suscribirse</button>
+                <button id="toggleHighlight" class="btn btn-sm btn-outline-secondary" aria-pressed="false" aria-controls="highlight">Ocultar destacado</button>
+              </div>
+            </div>
+          </div>
+
+          <section class="mt-3">
+            <div class="stream-info d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <h3 class="mb-1">Jugando: Super Fancy Game</h3>
+                <p class="text-muted mb-2">Etiquetas: Acción · Cooperativo · Español</p>
+                <p class="text-muted">Descripción breve del stream — charla, gameplays, sorteos y comunidad amigable.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="col-lg-4">
+          <div class="chat">
+            <div class="p-3 d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <strong>Chat en vivo</strong>
+                <small class="text-muted">· público</small>
+              </div>
+              <div class="d-flex gap-2 align-items-center">
+                <small class="text-muted">Emotes ON</small>
+                <button id="toggleRealChat" class="btn btn-sm btn-outline-light" title="Alternar chat real">Usar chat real</button>
+              </div>
+            </div>
+            <!-- contenedor para el chat simulado (por defecto visible) -->
+            <div class="chat-messages" id="messages" aria-live="polite" aria-atomic="false">
+              <!-- mensajes generados por JS -->
+            </div>
+
+            <!-- contenedor donde se inyectará el iframe del chat real -->
+            <div id="chatEmbedWrapper" style="display:none; height:100%;">
+              <!-- iframe creado dinámicamente -->
+            </div>
+
+            <div class="chat-input d-flex flex-column" role="form" aria-label="Caja de chat" id="localChatForm">
+              <div class="d-flex mb-2 gap-2 align-items-center">
+                <div class="emotes" role="list" aria-label="Emotes">
+                  <button type="button" class="emote-btn" data-emote="😄" aria-label="Emote sonrisa">😄</button>
+                  <button type="button" class="emote-btn" data-emote="🔥" aria-label="Emote fuego">🔥</button>
+                  <button type="button" class="emote-btn" data-emote="❤️" aria-label="Emote corazón">❤️</button>
+                  <button type="button" class="emote-btn" data-emote="✨" aria-label="Emote brillos">✨</button>
+                </div>
+                <small class="text-muted">Presiona Enter para enviar</small>
+              </div>
+              <div class="d-flex">
+                <input id="chatText" class="form-control form-control-sm me-2 bg-transparent text-light border-0" placeholder="Enviar un mensaje..." aria-label="Mensaje">
+                <button id="sendBtn" class="btn btn-sm btn-primary">Enviar</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <div class="sidebar-card">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>Streams recomendados</strong>
+                <small class="text-muted">Ver todo</small>
+              </div>
+              <div class="d-flex gap-2 align-items-center mb-2">
+                <img src="../assets/brand/bootstrap-logo-shadow.png" alt="mini" width="48" height="48" class="rounded">
+                <div>
+                  <div style="font-weight:700">ProPlayer</div>
+                  <div class="text-muted" style="font-size:.85rem">2.1K viewers · Shooter</div>
+                </div>
+                <div class="ms-auto"><button class="btn btn-sm follow-btn">Seguir</button></div>
+              </div>
+              <div class="d-flex gap-2 align-items-center">
+                <img src="../assets/brand/bootstrap-logo-shadow.png" alt="mini" width="48" height="48" class="rounded">
+                <div>
+                  <div style="font-weight:700">ChillStream</div>
+                  <div class="text-muted" style="font-size:.85rem">1.2K viewers · Chill</div>
+                </div>
+                <div class="ms-auto"><button class="btn btn-sm btn-outline-light">Ver</button></div>
+              </div>
+            </div>
+
+            <div class="sidebar-card">
+              <strong>Sobre la pagina</strong>
+              <p class="text-muted small mt-2">Pagina de ejemplo con la finalidad de mostrar el trabajo para el modulo 1 del curso de titulacion por Norman Nayart Alamos Hernández.</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+
+    <script>
+      // Chat simulado: mensajes automáticos y envío por el usuario
+      const messages = document.getElementById('messages');
+      const chatText = document.getElementById('chatText');
+      const sendBtn = document.getElementById('sendBtn');
+
+      const sample = [
+        {user:'Alex', text:'¡Buena ronda!'},
+        {user:'María', text:'¿De dónde eres? 👀'},
+        {user:'ProtoDev', text:'Sigue así 🔥'},
+        {user:'Lily', text:'Qué build usas?'}
+      ];
+
+      function addMsg(user, text, cls=''){
+        const el = document.createElement('div');
+        el.className = 'msg text-wrap';
+        // accessible label for screen readers
+        el.setAttribute('role','article');
+        el.setAttribute('aria-label', user + ' dijo: ' + text);
+        el.innerHTML = `<span class="user">${user}:</span> <span>${text}</span>`;
+        messages.appendChild(el);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      // Simular mensajes cada 2.5s
+      let idx=0;
+      setInterval(()=>{
+        const m = sample[idx % sample.length];
+        addMsg(m.user, m.text);
+        idx++;
+      },2500);
+
+      sendBtn.addEventListener('click', ()=>{
+        const v = chatText.value.trim();
+        if(!v) return;
+        addMsg('Tú', v);
+        chatText.value='';
+        chatText.focus();
+      });
+
+      chatText.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendBtn.click(); }});
+
+      // Emotes handling: insert emote into input when clicked
+      document.querySelectorAll('.emote-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const em = btn.getAttribute('data-emote');
+          const start = chatText.selectionStart || 0;
+          const end = chatText.selectionEnd || 0;
+          const val = chatText.value;
+          chatText.value = val.slice(0,start) + em + val.slice(end);
+          // move caret after inserted emote
+          const pos = start + em.length;
+          chatText.setSelectionRange(pos,pos);
+          chatText.focus();
+        });
+      });
+
+      // Highlight overlay: mostrar al cargar con animación
+      const highlight = document.getElementById('highlight');
+      window.addEventListener('load', ()=>{
+        setTimeout(()=>{
+          highlight.classList.remove('d-none');
+          highlight.style.animation = 'fadeInUp 450ms ease-out';
+        },500);
+      });
+
+      // simple animation keyframes in JS (fallback si no definido)
+      const styleEl = document.createElement('style');
+      styleEl.innerHTML = `@keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`;
+      document.head.appendChild(styleEl);
+
+      // Toggle button for highlight
+      const toggleBtn = document.getElementById('toggleHighlight');
+      if(toggleBtn){
+        toggleBtn.addEventListener('click', ()=>{
+          const hidden = highlight.classList.toggle('d-none');
+          // update aria-pressed
+          const pressed = !hidden;
+          toggleBtn.setAttribute('aria-pressed', String(pressed));
+          toggleBtn.textContent = hidden ? 'Mostrar destacado' : 'Ocultar destacado';
+        });
+      }
+
+      // Create Twitch iframe dynamically using current hostname as parent
+      (function createTwitchEmbed(){
+        try{
+          const wrapper = document.getElementById('embedWrapper');
+          if(!wrapper) return;
+          let host = window.location.hostname || 'localhost';
+          // normalize localhost variants
+          if(host === '' || host === '::1' || host === '127.0.0.1') host = 'localhost';
+          // If host contains port, remove it for parent param
+          host = host.split(':')[0];
+          const channel = 'mym_alkapone';
+          const src = `https://player.twitch.tv/?channel=${channel}&parent=${host}`;
+          const iframe = document.createElement('iframe');
+          iframe.setAttribute('src', src);
+          iframe.setAttribute('allowfullscreen', 'true');
+          iframe.setAttribute('scrolling', 'no');
+          iframe.setAttribute('frameborder', '0');
+          iframe.setAttribute('title', 'Twitch player');
+          iframe.style.width = '100%'; iframe.style.height = '100%'; iframe.style.border = '0';
+          wrapper.appendChild(iframe);
+          console.log('Twitch embed created with parent:', host);
+        }catch(e){
+          console.warn('Could not create Twitch embed', e);
+        }
+      })();
+
+      // Chat real de Twitch: crear iframe y alternar con chat local
+      (function setupRealChatToggle(){
+        const toggleBtn = document.getElementById('toggleRealChat');
+        const chatWrapper = document.getElementById('chatEmbedWrapper');
+        const messagesEl = document.getElementById('messages');
+        const localForm = document.getElementById('localChatForm');
+        let chatIframe = null;
+
+        function createChatIframe(){
+          if(chatIframe) return chatIframe;
+          let host = window.location.hostname || 'localhost';
+          if(host === '' || host === '::1' || host === '127.0.0.1') host = 'localhost';
+          host = host.split(':')[0];
+          const channel = 'mym_alkapone';
+          const src = `https://www.twitch.tv/embed/${channel}/chat?parent=${host}&darkpopout=true`;
+          const iframe = document.createElement('iframe');
+          iframe.setAttribute('src', src);
+          iframe.setAttribute('frameborder','0');
+          iframe.setAttribute('scrolling','no');
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = '0';
+          chatWrapper.appendChild(iframe);
+          chatIframe = iframe;
+          return iframe;
+        }
+
+        toggleBtn.addEventListener('click', ()=>{
+          const usingReal = chatWrapper.style.display !== 'none';
+          if(!usingReal){
+            // mostrar chat real
+            createChatIframe();
+            chatWrapper.style.display = 'block';
+            messagesEl.style.display = 'none';
+            localForm.style.display = 'none';
+            toggleBtn.textContent = 'Usar chat local';
+          }else{
+            // volver al chat simulado
+            chatWrapper.style.display = 'none';
+            messagesEl.style.display = 'block';
+            localForm.style.display = 'flex';
+            toggleBtn.textContent = 'Usar chat real';
+          }
+        });
+      })();
+    </script>
+
+    <script src="../assets/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
